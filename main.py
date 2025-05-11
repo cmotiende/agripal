@@ -1,14 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import requests
+import together
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI()
 
+# Allow all origins (for frontend access)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,32 +14,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Question(BaseModel):
-    query: str
+together.api_key = os.getenv("TOGETHER_API_KEY")
 
-TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+@app.get("/")
+def read_root():
+    return {"message": "AgriPal API is running 🚀"}
 
 @app.post("/ask")
-def answer_question(question: Question):
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_API_KEY}",
-        "Content-Type": "application/json"
-    }
+async def ask_question(request: Request):
+    data = await request.json()
+    query = data.get("query")
 
-    data = {
-        "model": "meta-llama/Llama-3-8b-chat-hf",
-        "messages": [
-            {"role": "system", "content": "You are an expert agricultural consultant. Help farmers with clear, useful answers."},
-            {"role": "user", "content": question.query}
-        ],
-        "max_tokens": 512,
-        "temperature": 0.7
-    }
+    response = together.Complete.create(
+        prompt=query,
+        model="togethercomputer/llama-2-70b-chat",
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+    )
 
-    try:
-        response = requests.post("https://api.together.xyz/v1/chat/completions", headers=headers, json=data)
-        result = response.json()
-
-        return {"answer": result["choices"][0]["message"]["content"]}
-    except Exception as e:
-        return {"error": str(e)}
+    answer = response["output"]["choices"][0]["text"]
+    return {"answer": answer.strip()}
